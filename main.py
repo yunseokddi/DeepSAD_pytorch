@@ -1,7 +1,11 @@
 from dataset.main import load_dataset
 
 import argparse
+import numpy as np
+import torch
+import random
 
+dataset_name = 'cifa10'
 parser = argparse.ArgumentParser(description='Train Deep SAD model',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -11,7 +15,7 @@ parser = argparse.ArgumentParser(description='Train Deep SAD model',
 # 'cardio_mlp', 'satellite_mlp', 'satimage-2_mlp', 'shuttle_mlp',
 # 'thyroid_mlp'
 ################################################################################
-parser.add_argument('--net_name', '-net', type=str, default='cifar10_LeNet', help='Enter backbone network')
+parser.add_argument('--net_name', '-net', type=str, default='cifar10_LeNet', help='Enter backbone networks')
 parser.add_argument('--xp_path', '-xp', type=str, default='./experiment/', help='Tensorboard log path')
 parser.add_argument('--data_path', '-data', type=str, default='./data/', help='Dataset path')
 parser.add_argument('--load_model', '-load', type=bool, default=None, help='load pretrained weight')
@@ -19,7 +23,7 @@ parser.add_argument('--device', '-device', type=str, default='cuda',
                     help='Computation device to use ("cpu", "cuda", "cuda:2", etc.).')
 parser.add_argument('--seed', '-seed', type=int, default=1, help='Set seed. If -1, use randomization.')
 parser.add_argument('--pretrain', '-pretrain', type=bool, default=True,
-                    help='Pretrain neural network parameters via autoencoder.')
+                    help='Pretrain neural networks parameters via autoencoder.')
 
 ################################################################################
 # Dataset settings
@@ -41,7 +45,7 @@ parser.add_argument('--n_known_outlier_classes', '-n_known_outlier_classes', typ
 ################################################################################
 # DeepSAD settings
 ################################################################################
-parser.add_argument('--num_epochs', '-e', type=int, default=50, help='Num of epochs to train')
+parser.add_argument('--n_epochs', '-e', type=int, default=50, help='Num of epochs to train')
 parser.add_argument('--eta', '-eta', type=float, default=1.0, help='Deep SAD hyperparameter eta (must be 0 < eta).')
 parser.add_argument('--ratio_known_normal', '-normal_ratio', type=float, default=0.0,
                     help='Ratio of known (labeled) normal training examples.')
@@ -50,14 +54,14 @@ parser.add_argument('--ratio_known_outlier', '-outlier_ratio', type=float, defau
 parser.add_argument('--ratio_pollution', '-ratio_pollution', type=float, default=0.0,
                     help='Pollution ratio of unlabeled training data with unknown (unlabeled) anomalies.')
 parser.add_argument('--lr', '-lr', type=float, default=1e-3,
-                    help='Initial learning rate for Deep SAD network training. Default=0.001')
+                    help='Initial learning rate for Deep SAD networks training. Default=0.001')
 parser.add_argument('--lr_milestone', '-lr_milestone', type=int, default=0,
                     help='Lr scheduler milestones at which lr is multiplied by 0.1. Can be multiple and must be increasing.')
 parser.add_argument('--batch_size', '-bs', type=int, default=128, help='Batch size for mini-batch training.')
 parser.add_argument('--weight_decay', '-wd', type=float, default=1e-6,
                     help='Weight decay (L2 penalty) hyperparameter for Deep SAD objective.')
 parser.add_argument('--optimizer_name', '-optimizer', type=str, default='adam',
-                    help='Name of the optimizer to use for Deep SAD network training.')
+                    help='Name of the optimizer to use for Deep SAD networks training.')
 
 ################################################################################
 # AUTOENCODER settings
@@ -75,11 +79,52 @@ parser.add_argument('--ae_batch_size', '-ae_bs', type=int, default=128,
 parser.add_argument('--ae_weight_decay', '-ae_wd', type=float, default=1e-6,
                     help='Weight decay (L2 penalty) hyperparameter for autoencoder objective.')
 
+args = parser.parse_args()
 
-print("asd")
-# def main(dataset_name, net_name, xp_path, data_path, load_config, load_model, eta,
-#          ratio_known_normal, ratio_known_outlier, ratio_pollution, device, seed,
-#          optimizer_name, lr, n_epochs, lr_milestone, batch_size, weight_decay,
-#          pretrain, ae_optimizer_name, ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
-#          num_threads, n_jobs_dataloader, normal_class, known_outlier_class, n_known_outlier_classes):
-#
+
+def main(net_name, xp_path, data_path, load_model, eta,
+         ratio_known_normal, ratio_known_outlier, ratio_pollution, device, seed,
+         optimizer_name, lr, n_epochs, lr_milestone, batch_size, weight_decay,
+         pretrain, ae_optimizer_name, ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
+         num_threads, n_jobs_dataloader, normal_class, known_outlier_class, n_known_outlier_classes):
+    print("Tensorboard path: {}".format(args.xp_path))
+    print("Data path: {}".format(args.data_path))
+    print("Dataset: {}".format(dataset_name))
+    print("Normal class: {}".format(normal_class))
+    print('Ratio of labeled normal train samples: {:.2f}'.format(ratio_known_normal))
+    print('Ratio of labeled anomalous samples: {:.2f}'.format(ratio_known_outlier))
+    print('Pollution ratio of unlabeled train data: {:.2f}'.format(ratio_pollution))
+    print('Number of known anomaly classes: {}'.format(n_known_outlier_classes))
+    print('Network: {}'.format(net_name))
+
+    print('Eta-parameter: {:.2f}'.format(eta))
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    print('Set seed to {}'.format(seed))
+
+    if num_threads > 0:
+        torch.set_num_threads(num_threads)
+
+    print('Computation device: {}'.format(device))
+    print('Number of threads: {}'.format(num_threads))
+    print('Number of dataloader workders: {}'.format(n_jobs_dataloader))
+
+    dataset = load_dataset(data_path, normal_class, known_outlier_class, n_known_outlier_classes,
+                           ratio_known_normal, ratio_known_outlier, ratio_pollution)
+
+    if n_known_outlier_classes > 1:
+        print('Known anomaly classes: {}'.format(dataset.known_outlier_classes))
+
+
+if __name__ == "__main__":
+    main(args.net_name, args.xp_path, args.data_path, args.load_model, args.eta,
+         args.ratio_known_normal, args.ratio_known_outlier, args.ratio_pollution, args.device, args.seed,
+         args.optimizer_name, args.lr, args.n_epochs, args.lr_milestone, args.batch_size, args.weight_decay,
+         args.pretrain, args.ae_optimizer_name, args.ae_lr, args.ae_n_epochs, args.ae_lr_milestone, args.ae_batch_size,
+         args.ae_weight_decay,
+         args.num_threads, args.n_jobs_dataloader, args.normal_class, args.known_outlier_class,
+         args.n_known_outlier_classes)

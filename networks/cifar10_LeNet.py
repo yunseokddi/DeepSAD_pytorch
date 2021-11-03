@@ -6,6 +6,7 @@ from base.base_net import BaseNet
 
 
 class CIFAR10_LeNet(BaseNet):
+
     def __init__(self, rep_dim=128):
         super().__init__()
 

@@ -2,6 +2,7 @@ from base.torchvision_dataset import TorchvisionDataset
 from torchvision.datasets import CIFAR10
 from PIL import Image
 from .preprocessing import create_semisupervised_setting
+from torch.utils.data import Subset
 
 import torch
 import torchvision.transforms as transforms
@@ -38,6 +39,8 @@ class CIFAR10Dataset(TorchvisionDataset):
                                                              ratio_pollution)
 
         train_set.semi_targets[idx] = torch.tensor(semi_targets)
+
+        self.train_set = Subset(train_set, idx)
 
         self.test_set = MyCIFAR10(root=self.root, train=False, transform=transform, target_transform=target_transform,
                                   download=True)

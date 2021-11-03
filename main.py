@@ -1,11 +1,13 @@
 from dataset.main import load_dataset
+from DeepSAD import DeepSAD
 
 import argparse
 import numpy as np
 import torch
 import random
+import logging
 
-dataset_name = 'cifa10'
+dataset_name = 'cifar10'
 parser = argparse.ArgumentParser(description='Train Deep SAD model',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -28,15 +30,15 @@ parser.add_argument('--pretrain', '-pretrain', type=bool, default=True,
 ################################################################################
 # Dataset settings
 ################################################################################
-parser.add_argument('--num_threads', '-num_threads', type=int, default=0,
+parser.add_argument('--num_threads', '-num_threads', type=int, default=4,
                     help='Number of threads used for parallelizing CPU operations. 0 means that all resources are used.')
-parser.add_argument('--n_jobs_dataloader', '-n_jobs_dataloader', type=int, default=0,
+parser.add_argument('--n_jobs_dataloader', '-n_jobs_dataloader', type=int, default=4,
                     help='Number of workers for data loading. 0 means that the data will be loaded in the main process.')
 parser.add_argument('--normal_class', '-normal_class', type=int, default=0,
                     help='Specify the normal class of the dataset (all other classes are considered anomalous).')
 parser.add_argument('--known_outlier_class', '-known_outlier_class', type=int, default=1,
                     help='Specify the known outlier class of the dataset for semi-supervised anomaly detection.')
-parser.add_argument('--n_known_outlier_classes', '-n_known_outlier_classes', type=int, default=0,
+parser.add_argument('--n_known_outlier_classes', '-n_known_outlier_classes', type=int, default=1,
                     help='Number of known outlier classes.'
                          'If 0, no anomalies are known.'
                          'If 1, outlier class as specified in --known_outlier_class option.'
@@ -49,13 +51,13 @@ parser.add_argument('--n_epochs', '-e', type=int, default=50, help='Num of epoch
 parser.add_argument('--eta', '-eta', type=float, default=1.0, help='Deep SAD hyperparameter eta (must be 0 < eta).')
 parser.add_argument('--ratio_known_normal', '-normal_ratio', type=float, default=0.0,
                     help='Ratio of known (labeled) normal training examples.')
-parser.add_argument('--ratio_known_outlier', '-outlier_ratio', type=float, default=0.0,
+parser.add_argument('--ratio_known_outlier', '-outlier_ratio', type=float, default=0.01,
                     help='Ratio of known (labeled) anomalous training examples.')
-parser.add_argument('--ratio_pollution', '-ratio_pollution', type=float, default=0.0,
+parser.add_argument('--ratio_pollution', '-ratio_pollution', type=float, default=0.1,
                     help='Pollution ratio of unlabeled training data with unknown (unlabeled) anomalies.')
 parser.add_argument('--lr', '-lr', type=float, default=1e-3,
                     help='Initial learning rate for Deep SAD networks training. Default=0.001')
-parser.add_argument('--lr_milestone', '-lr_milestone', type=int, default=0,
+parser.add_argument('--lr_milestone', '-lr_milestone', type=int, default=50,
                     help='Lr scheduler milestones at which lr is multiplied by 0.1. Can be multiple and must be increasing.')
 parser.add_argument('--batch_size', '-bs', type=int, default=128, help='Batch size for mini-batch training.')
 parser.add_argument('--weight_decay', '-wd', type=float, default=1e-6,
@@ -72,7 +74,7 @@ parser.add_argument('--ae_lr', '-ae_lr', type=float, default=1e-3,
                     help='Initial learning rate for autoencoder pretraining. Default=0.001')
 parser.add_argument('--ae_n_epochs', '-ae_n_epochs', type=int, default=100,
                     help='Number of epochs to train autoencoder.')
-parser.add_argument('--ae_lr_milestone', '-ae_lr_milestone', type=int, default=0,
+parser.add_argument('--ae_lr_milestone', '-ae_lr_milestone', type=list, default=0,
                     help='Lr scheduler milestones at which lr is multiplied by 0.1. Can be multiple and must be increasing.')
 parser.add_argument('--ae_batch_size', '-ae_bs', type=int, default=128,
                     help='Batch size for mini-batch autoencoder training.')
@@ -118,6 +120,34 @@ def main(net_name, xp_path, data_path, load_model, eta,
 
     if n_known_outlier_classes > 1:
         print('Known anomaly classes: {}'.format(dataset.known_outlier_classes))
+
+    deepSAD = DeepSAD(args.eta)
+    deepSAD.set_network(net_name)
+
+    if load_model:
+        deepSAD.load_model(model_path=load_model, load_ae=True, map_location=device)
+        print('Loading model from {}'.format(load_model))
+
+    print('Pretraining: {}'.format(pretrain))
+
+    if pretrain:
+        print('Pretraining optimizer: {}'.format(args.ae_optimizer_name))
+        print('Pretraining learning rate: {}'.format(args.ae_lr))
+        print('Pretraining epochs: {}'.format(args.ae_n_epochs))
+        print('Pretraining learning rate scheduler milestones: {}'.format(args.ae_lr_milestone))
+        print('Pretraining batch size: {}'.format(args.ae_batch_size))
+        print('Pretraining weight decay: {}'.format(args.ae_weight_decay))
+
+    ae_lr_milestone = [30, 80]
+    deepSAD.pretrain(dataset,
+                     optimizer_name=args.ae_optimizer_name,
+                     lr=args.ae_lr,
+                     n_epochs=args.ae_n_epochs,
+                     lr_milestones=ae_lr_milestone,
+                     batch_size=args.ae_batch_size,
+                     weight_decay=args.ae_weight_decay,
+                     device=args.device,
+                     n_jobs_dataloader=args.n_jobs_dataloader)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from base.base_trainer import BaseTrainer
 from base.base_dataset import BaseADDataset
 from base.base_net import BaseNet
 from sklearn.metrics import roc_auc_score
+from tqdm import tqdm
 
 import time
 import torch
@@ -118,4 +119,3 @@ class AETrainer(BaseTrainer):
         print('Test AUC: {:.2f}%'.format(100. * self.test_auc))
         print('Test Time: {:.3f}s'.format(self.test_time))
         print('Finished testing autoencoder.')
-

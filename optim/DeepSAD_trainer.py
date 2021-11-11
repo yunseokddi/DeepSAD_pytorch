@@ -29,7 +29,7 @@ class DeepSADTrainer(BaseTrainer):
         self.test_time = None
         self.test_scores = None
 
-    def train(self, dataset: BaseADDataset, net: BaseNet):
+    def train(self, dataset: BaseADDataset, net: BaseNet, writer):
         logger = logging.getLogger()
 
         train_loader, _ = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
@@ -82,6 +82,8 @@ class DeepSADTrainer(BaseTrainer):
                 tq.set_postfix(errors)
 
                 total_avg_loss = epoch_loss / n_batches
+
+            writer.add_scalar("Deep SAD/Loss", total_avg_loss, epoch)
 
         self.train_time = time.time() - start_time
         print('Total pretraining avg loss: {:.5f}'.format(total_avg_loss))

@@ -22,7 +22,7 @@ class AETrainer(BaseTrainer):
         self.test_auc = None
         self.test_time = None
 
-    def train(self, dataset: BaseADDataset, ae_net: BaseNet):
+    def train(self, dataset: BaseADDataset, ae_net: BaseNet, writer):
         global total_avg_loss
         train_loader, _ = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
 
@@ -76,6 +76,8 @@ class AETrainer(BaseTrainer):
                 tq.set_postfix(errors)
 
                 total_avg_loss = epoch_loss / n_batches
+
+            writer.add_scalar("AE/Loss", total_avg_loss, epoch)
 
         self.train_time = time.time() - start_time
 

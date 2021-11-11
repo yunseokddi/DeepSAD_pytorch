@@ -1,5 +1,7 @@
 from dataset.main import load_dataset
 from DeepSAD import DeepSAD
+from utils.plot_images_grid import plot_images_grid
+from torch.utils.tensorboard import SummaryWriter
 
 import argparse
 import numpy as np
@@ -17,7 +19,7 @@ parser = argparse.ArgumentParser(description='Train Deep SAD model',
 # 'thyroid_mlp'
 ################################################################################
 parser.add_argument('--net_name', '-net', type=str, default='cifar10_LeNet', help='Enter backbone networks')
-parser.add_argument('--xp_path', '-xp', type=str, default='./experiment/', help='Tensorboard log path')
+parser.add_argument('--xp_path', '-xp', type=str, default='./experiment/', help='xp log path')
 parser.add_argument('--data_path', '-data', type=str, default='./data/', help='Dataset path')
 parser.add_argument('--load_model', '-load', type=bool, default=None, help='load pretrained weight')
 parser.add_argument('--device', '-device', type=str, default='cuda',
@@ -71,7 +73,7 @@ parser.add_argument('--ae_optimizer_name', '-ae_optimizer', type=str, default='a
                     help='Name of the optimizer to use for autoencoder pretraining.')
 parser.add_argument('--ae_lr', '-ae_lr', type=float, default=1e-3,
                     help='Initial learning rate for autoencoder pretraining. Default=0.001')
-parser.add_argument('--ae_n_epochs', '-ae_n_epochs', type=int, default=200,
+parser.add_argument('--ae_n_epochs', '-ae_n_epochs', type=int, default=100,
                     help='Number of epochs to train autoencoder.')
 parser.add_argument('--ae_lr_milestone', '-ae_lr_milestone', type=list, default=0,
                     help='Lr scheduler milestones at which lr is multiplied by 0.1. Can be multiple and must be increasing.')
@@ -88,7 +90,7 @@ def main(net_name, xp_path, data_path, load_model, eta,
          optimizer_name, lr, n_epochs, lr_milestone, batch_size, weight_decay,
          pretrain, ae_optimizer_name, ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
          num_threads, n_jobs_dataloader, normal_class, known_outlier_class, n_known_outlier_classes):
-    print("Tensorboard path: {}".format(args.xp_path))
+    print("xp path: {}".format(args.xp_path))
     print("Data path: {}".format(args.data_path))
     print("Dataset: {}".format(dataset_name))
     print("Normal class: {}".format(normal_class))
@@ -170,6 +172,35 @@ def main(net_name, xp_path, data_path, load_model, eta,
                   n_jobs_dataloader=n_jobs_dataloader)
 
     deepSAD.test(dataset, device=device, n_jobs_dataloader=n_jobs_dataloader)
+
+    deepSAD.save_results(export_json=xp_path + '/results.json')
+    deepSAD.save_model(export_model=xp_path + '/model.tar')
+
+    # Plot most anomalous and most normal test samples
+    indices, labels, scores = zip(*deepSAD.results['test_scores'])
+    indices, labels, scores = np.array(indices), np.array(labels), np.array(scores)
+    idx_all_sorted = indices[np.argsort(scores)]  # from lowest to highest score
+    idx_normal_sorted = indices[labels == 0][np.argsort(scores[labels == 0])]  # from lowest to highest score
+
+    if dataset_name in ('mnist', 'fmnist', 'cifar10'):
+
+        if dataset_name in ('mnist', 'fmnist'):
+            X_all_low = dataset.test_set.data[idx_all_sorted[:32], ...].unsqueeze(1)
+            X_all_high = dataset.test_set.data[idx_all_sorted[-32:], ...].unsqueeze(1)
+            X_normal_low = dataset.test_set.data[idx_normal_sorted[:32], ...].unsqueeze(1)
+            X_normal_high = dataset.test_set.data[idx_normal_sorted[-32:], ...].unsqueeze(1)
+
+        if dataset_name == 'cifar10':
+            X_all_low = torch.tensor(np.transpose(dataset.test_set.data[idx_all_sorted[:32], ...], (0, 3, 1, 2)))
+            X_all_high = torch.tensor(np.transpose(dataset.test_set.data[idx_all_sorted[-32:], ...], (0, 3, 1, 2)))
+            X_normal_low = torch.tensor(np.transpose(dataset.test_set.data[idx_normal_sorted[:32], ...], (0, 3, 1, 2)))
+            X_normal_high = torch.tensor(
+                np.transpose(dataset.test_set.data[idx_normal_sorted[-32:], ...], (0, 3, 1, 2)))
+
+        plot_images_grid(X_all_low, export_img=xp_path + '/all_low', padding=2)
+        plot_images_grid(X_all_high, export_img=xp_path + '/all_high', padding=2)
+        plot_images_grid(X_normal_low, export_img=xp_path + '/normals_low', padding=2)
+        plot_images_grid(X_normal_high, export_img=xp_path + '/normals_high', padding=2)
 
 
 if __name__ == "__main__":

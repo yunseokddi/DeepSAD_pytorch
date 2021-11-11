@@ -17,7 +17,7 @@ class BaseTrainer(ABC):
         self.n_jobs_dataloader = n_jobs_dataloader
 
     @abstractmethod
-    def train(self, dataset: BaseADDataset, net: BaseNet) -> BaseNet:
+    def train(self, dataset: BaseADDataset, net: BaseNet, writer) -> BaseNet:
         pass
 
     @abstractmethod

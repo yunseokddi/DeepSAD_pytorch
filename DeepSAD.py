@@ -5,6 +5,7 @@ from networks.main import build_autoencoder, build_network
 from base.base_dataset import BaseADDataset
 from optim.DeepSAD_trainer import DeepSADTrainer
 from optim.ae_trainer import AETrainer
+from torch.utils.tensorboard import SummaryWriter
 
 
 class DeepSAD(object):
@@ -13,6 +14,7 @@ class DeepSAD(object):
         self.c = None
         self.net_name = None
         self.net = None
+        self.writer = SummaryWriter('./runs/experiment1')
 
         self.trainer = None
         self.optimizer_name = None
@@ -46,7 +48,7 @@ class DeepSAD(object):
                                       lr_milestones=lr_milestones, batch_size=batch_size, weight_decay=weight_decay,
                                       device=device, n_jobs_dataloader=n_jobs_dataloader)
 
-        self.net = self.trainer.train(dataset, self.net)
+        self.net = self.trainer.train(dataset, self.net, self.writer)
         self.results['train_time'] = self.trainer.train_time
         self.c = self.trainer.c.cpu().data.numpy().tolist()
 
@@ -71,7 +73,7 @@ class DeepSAD(object):
                                     batch_size=batch_size, weight_decay=weight_decay, device=device,
                                     n_jobs_dataloader=n_jobs_dataloader)
 
-        self.ae_net = self.ae_trainer.train(dataset, self.ae_net)
+        self.ae_net = self.ae_trainer.train(dataset, self.ae_net, self.writer)
 
         self.ae_results['train_time'] = self.ae_trainer.train_time
 
@@ -95,3 +97,32 @@ class DeepSAD(object):
         """Save autoencoder results dict to a JSON-file"""
         with open(export_json, 'w') as fp:
             json.dump(self.ae_results, fp)
+
+    def save_model(self, export_model, save_ae=True):
+        """Save Deep SAD model to export_model."""
+
+        net_dict = self.net.state_dict()
+        ae_net_dict = self.ae_net.state_dict() if save_ae else None
+
+        torch.save({'c': self.c,
+                    'net_dict': net_dict,
+                    'ae_net_dict': ae_net_dict}, export_model)
+
+    def load_model(self, model_path, load_ae=False, map_location='cpu'):
+        """Load Deep SAD model from model_path."""
+
+        model_dict = torch.load(model_path, map_location=map_location)
+
+        self.c = model_dict['c']
+        self.net.load_state_dict(model_dict['net_dict'])
+
+        # load autoencoder parameters if specified
+        if load_ae:
+            if self.ae_net is None:
+                self.ae_net = build_autoencoder(self.net_name)
+            self.ae_net.load_state_dict(model_dict['ae_net_dict'])
+
+    def save_results(self, export_json):
+        """Save results dict to a JSON-file."""
+        with open(export_json, 'w') as fp:
+            json.dump(self.results, fp)

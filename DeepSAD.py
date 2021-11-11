@@ -1,4 +1,5 @@
 import torch
+import json
 
 from networks.main import build_autoencoder, build_network
 from base.base_dataset import BaseADDataset
@@ -45,11 +46,23 @@ class DeepSAD(object):
                                       lr_milestones=lr_milestones, batch_size=batch_size, weight_decay=weight_decay,
                                       device=device, n_jobs_dataloader=n_jobs_dataloader)
 
+        self.net = self.trainer.train(dataset, self.net)
         self.results['train_time'] = self.trainer.train_time
         self.c = self.trainer.c.cpu().data.numpy().tolist()
 
+    def test(self, dataset: BaseADDataset, device: str = 'cuda', n_jobs_dataloader: int = 0):
+        if self.trainer is None:
+            self.trainer = DeepSADTrainer(self.c, self.eta, device=device, n_jobs_dataloader=n_jobs_dataloader)
+
+        self.trainer.test(dataset, self.net)
+
+        self.results['test_auc'] = self.trainer.test_auc
+        self.results['test_time'] = self.trainer.test_time
+        self.results['test_scores'] = self.trainer.test_scores
+
     def pretrain(self, dataset: BaseADDataset, optimizer_name: str = 'adam', lr: float = 0.001, n_epochs: int = 100,
-                 lr_milestones: list = [30, 80], batch_size: int = 128, weight_decay: float = 1e-6, device: str = 'cuda',
+                 lr_milestones: list = [30, 80], batch_size: int = 128, weight_decay: float = 1e-6,
+                 device: str = 'cuda',
                  n_jobs_dataloader: int = 0):
         self.ae_net = build_autoencoder(self.net_name)
 
@@ -69,7 +82,6 @@ class DeepSAD(object):
 
         self.init_network_weights_from_pretraining()
 
-
     def init_network_weights_from_pretraining(self):
         net_dict = self.net.state_dict()
         ae_net_dict = self.ae_net.state_dict()
@@ -78,3 +90,8 @@ class DeepSAD(object):
         net_dict.update(ae_net_dict)
 
         self.net.load_state_dict(net_dict)
+
+    def save_ae_result(self, export_json):
+        """Save autoencoder results dict to a JSON-file"""
+        with open(export_json, 'w') as fp:
+            json.dump(self.ae_results, fp)

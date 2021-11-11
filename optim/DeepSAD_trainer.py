@@ -3,12 +3,14 @@ from base.base_dataset import BaseADDataset
 from base.base_net import BaseNet
 from torch.utils.data.dataloader import DataLoader
 from sklearn.metrics import roc_auc_score
+from tqdm import tqdm
 
 import logging
 import time
 import torch
 import torch.optim as optim
 import numpy as np
+
 
 class DeepSADTrainer(BaseTrainer):
     def __init__(self, c, eta: float, optimizer_name: str = 'adam', lr: float = 0.001, n_epochs: int = 150,
@@ -39,24 +41,24 @@ class DeepSADTrainer(BaseTrainer):
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=self.lr_milestones, gamma=0.1)
 
         if self.c is None:
-            logger.info('Initializing center c...')
+            print('Initializing center c...')
             self.c = self.init_center_c(train_loader, net)
-            logger.info('Center c initialized.')
+            print('Center c initialized.')
 
-        logger.info('Starting training...')
+        print('Starting training...')
         start_time = time.time()
         net.train()
 
         for epoch in range(self.n_epochs):
+            tq = tqdm(train_loader, total=len(train_loader))
             scheduler.step()
             if epoch in self.lr_milestones:
                 logger.info('  LR scheduler: new learning rate is %g' % float(scheduler.get_lr()[0]))
 
             epoch_loss = 0.0
             n_batches = 0
-            epoch_start_time = time.time()
 
-            for data in train_loader:
+            for data in tq:
                 inputs, _, semi_targets, _ = data
                 inputs, semi_targets = inputs.to(self.device), semi_targets.to(self.device)
 
@@ -64,7 +66,7 @@ class DeepSADTrainer(BaseTrainer):
 
                 outputs = net(inputs)
                 dist = torch.sum((outputs - self.c) ** 2, dim=1)
-                losses = torch.where(semi_targets == 0, dist, self.eta* ((dist+self.eps) ** semi_targets.float()))
+                losses = torch.where(semi_targets == 0, dist, self.eta * ((dist + self.eps) ** semi_targets.float()))
                 loss = torch.mean(losses)
                 loss.backward()
                 optimizer.step()
@@ -72,14 +74,69 @@ class DeepSADTrainer(BaseTrainer):
                 epoch_loss += loss.item()
                 n_batches += 1
 
-            epoch_train_time = time.time() - epoch_start_time
-            logger.info('Training Time: {:.3f}s'.format(self.train_time))
-            logger.info('Finished training.')
+                errors = {
+                    'epoch': epoch,
+                    'train loss': epoch_loss / n_batches
+                }
 
-            return net
+                tq.set_postfix(errors)
+
+                total_avg_loss = epoch_loss / n_batches
+
+        self.train_time = time.time() - start_time
+        print('Total pretraining avg loss: {:.5f}'.format(total_avg_loss))
+        print('Training Time: {:.3f}s'.format(self.train_time))
+        print('Finished training.')
+
+        return net
+
+    def test(self, dataset: BaseADDataset, net: BaseNet):
+        _, test_loader = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
+
+        net = net.to(self.device)
+        net.eval()
+
+        epoch_loss = 0.0
+        n_batches = 0
+        start_time = time.time()
+        idx_label_score = []
+
+        with torch.no_grad():
+            for data in test_loader:
+                inputs, labels, semi_targets, idx = data
+
+                inputs = inputs.to(self.device)
+                labels = labels.to(self.device)
+                semi_targets = semi_targets.to(self.device)
+                idx = idx.to(self.device)
+
+                outputs = net(inputs)
+                dist = torch.sum((outputs - self.c) ** 2, dim=1)
+                losses = torch.where(semi_targets==0, dist, self.eta *((dist + self.eps)** semi_targets.float()))
+                loss = torch.mean(losses)
+                scores = dist
+
+                idx_label_score += list(zip(idx.cpu().data.numpy().tolist(),
+                                            labels.cpu().data.numpy().tolist(),
+                                            scores.cpu().data.numpy().tolist()))
+
+                epoch_loss += loss.item()
+                n_batches += 1
+
+        self.test_time = time.time() - start_time
+        self.test_scores = idx_label_score
+
+        _, labels, scores = zip(*idx_label_score)
+        labels = np.array(labels)
+        scores = np.array(scores)
+        self.test_auc = roc_auc_score(labels, scores)
+
+        print('Test Loss: {:.6f}'.format(epoch_loss / n_batches))
+        print('Test AUC: {:.2f}%'.format(100. * self.test_auc))
+        print('Test Time: {:.3f}s'.format(self.test_time))
+        print('Finished testing.')
 
 
-    # def test(self, dataset: BaseADDataset, net: BaseNet):
 
     def init_center_c(self, train_loader: DataLoader, net: BaseNet, eps=0.1):
         n_samples = 0

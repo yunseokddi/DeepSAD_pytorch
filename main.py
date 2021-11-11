@@ -5,7 +5,6 @@ import argparse
 import numpy as np
 import torch
 import random
-import logging
 
 dataset_name = 'cifar10'
 parser = argparse.ArgumentParser(description='Train Deep SAD model',
@@ -47,7 +46,7 @@ parser.add_argument('--n_known_outlier_classes', '-n_known_outlier_classes', typ
 ################################################################################
 # DeepSAD settings
 ################################################################################
-parser.add_argument('--n_epochs', '-e', type=int, default=50, help='Num of epochs to train')
+parser.add_argument('--n_epochs', '-e', type=int, default=100, help='Num of epochs to train')
 parser.add_argument('--eta', '-eta', type=float, default=1.0, help='Deep SAD hyperparameter eta (must be 0 < eta).')
 parser.add_argument('--ratio_known_normal', '-normal_ratio', type=float, default=0.0,
                     help='Ratio of known (labeled) normal training examples.')
@@ -72,7 +71,7 @@ parser.add_argument('--ae_optimizer_name', '-ae_optimizer', type=str, default='a
                     help='Name of the optimizer to use for autoencoder pretraining.')
 parser.add_argument('--ae_lr', '-ae_lr', type=float, default=1e-3,
                     help='Initial learning rate for autoencoder pretraining. Default=0.001')
-parser.add_argument('--ae_n_epochs', '-ae_n_epochs', type=int, default=100,
+parser.add_argument('--ae_n_epochs', '-ae_n_epochs', type=int, default=200,
                     help='Number of epochs to train autoencoder.')
 parser.add_argument('--ae_lr_milestone', '-ae_lr_milestone', type=list, default=0,
                     help='Lr scheduler milestones at which lr is multiplied by 0.1. Can be multiple and must be increasing.')
@@ -148,6 +147,29 @@ def main(net_name, xp_path, data_path, load_model, eta,
                      weight_decay=args.ae_weight_decay,
                      device=args.device,
                      n_jobs_dataloader=args.n_jobs_dataloader)
+
+    deepSAD.save_ae_result(export_json=xp_path + '/ae_result.json')
+
+    print('Training optimizer: {}'.format(args.optimizer_name))
+    print('Training learning rate: {}'.format(args.lr))
+    print('Training epochs: {}'.format(args.n_epochs))
+    print('Training learning rate scheduler milestones: {}'.format(args.lr_milestone))
+    print('Training batch size: {}'.format(args.batch_size))
+    print('Training weight decay: {}'.format(args.weight_decay))
+
+    lr_milestone = [30, 80]
+
+    deepSAD.train(dataset,
+                  optimizer_name=args.optimizer_name,
+                  lr=args.lr,
+                  n_epochs=args.n_epochs,
+                  lr_milestones=lr_milestone,
+                  batch_size=args.batch_size,
+                  weight_decay=args.weight_decay,
+                  device=device,
+                  n_jobs_dataloader=n_jobs_dataloader)
+
+    deepSAD.test(dataset, device=device, n_jobs_dataloader=n_jobs_dataloader)
 
 
 if __name__ == "__main__":

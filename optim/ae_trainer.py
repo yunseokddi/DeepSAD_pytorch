@@ -23,6 +23,7 @@ class AETrainer(BaseTrainer):
         self.test_time = None
 
     def train(self, dataset: BaseADDataset, ae_net: BaseNet):
+        global total_avg_loss
         train_loader, _ = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
 
         criterion = nn.MSELoss(reduction='none')
@@ -49,9 +50,10 @@ class AETrainer(BaseTrainer):
 
             epoch_loss = 0.0
             n_batches = 0
-            epoch_start_time = time.time()
 
-            for data in train_loader:
+            tq = tqdm(train_loader, total=len(train_loader))
+
+            for data in tq:
                 inputs, _, _, _ = data
                 inputs = inputs.to(self.device)
 
@@ -66,12 +68,18 @@ class AETrainer(BaseTrainer):
                 epoch_loss += loss.item()
                 n_batches += 1
 
-            epoch_train_time = time.time() - epoch_start_time
-            print(f'| Epoch: {epoch + 1:03}/{self.n_epochs:03} | Train Time: {epoch_train_time:.3f}s '
-                  f'| Train Loss: {epoch_loss / n_batches:.6f} |')
+                errors = {
+                    'epoch': epoch,
+                    'train loss': epoch_loss / n_batches
+                }
+
+                tq.set_postfix(errors)
+
+                total_avg_loss = epoch_loss / n_batches
 
         self.train_time = time.time() - start_time
 
+        print('Total pretraining avg loss: {:.5f}'.format(total_avg_loss))
         print('Pretraining Time: {:.3f}s'.format(self.train_time))
         print('Finished pretraining')
 
@@ -92,7 +100,8 @@ class AETrainer(BaseTrainer):
         ae_net.eval()
 
         with torch.no_grad():
-            for data in test_loader:
+            tq = tqdm(test_loader, total=len(test_loader))
+            for data in tq:
                 inputs, labels, _, idx = data
                 inputs, labels, idx = inputs.to(self.device), labels.to(self.device), idx.to(self.device)
 
@@ -107,6 +116,12 @@ class AETrainer(BaseTrainer):
                 loss = torch.mean(rec_loss)
                 epoch_loss += loss.item()
                 n_batches += 1
+
+                errors = {
+                    'test loss': epoch_loss / n_batches
+                }
+
+            tq.set_postfix(errors)
 
         self.test_time = time.time() - start_time
 
